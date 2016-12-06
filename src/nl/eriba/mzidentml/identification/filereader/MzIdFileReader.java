@@ -653,9 +653,10 @@ public class MzIdFileReader implements Callable {
                 Boolean passThreshold = proteinHypothesis.isPassThreshold();
                 Double sequenceCoverage = 0.0;
                 List<CvParam> paramList = ambiguity.getCvParam();
-                for (CvParam x: paramList) {
-                    if (x.getName().contains("coverage")) {
-                        sequenceCoverage = Double.parseDouble(x.getValue());
+                for (CvParam parameter: paramList) {
+                    //Gets sequence coverage if available.
+                    if (parameter.getName().contains("coverage")) {
+                        sequenceCoverage = Double.parseDouble(parameter.getValue());
                     }
                 }
                 ArrayList<MzIdCvParam> mzIdParamList = new ArrayList<>();

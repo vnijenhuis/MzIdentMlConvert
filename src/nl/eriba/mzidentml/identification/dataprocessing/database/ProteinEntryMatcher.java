@@ -6,6 +6,7 @@ package nl.eriba.mzidentml.identification.dataprocessing.database;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -13,30 +14,25 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import nl.eriba.mzidentml.identification.collections.output.ProteinOutputCollection;
 import nl.eriba.mzidentml.identification.collections.general.CombinedDatabaseReferenceCollection;
 import nl.eriba.mzidentml.identification.collections.general.ProteinDatabaseSequenceCollection;
 import nl.eriba.mzidentml.identification.collections.mzid.MzIdProteinDetectionHypothesisCollection;
-import nl.eriba.mzidentml.identification.objects.output.ProteinOutput;
+import nl.eriba.mzidentml.identification.collections.output.ProteinOutputCollection;
 import nl.eriba.mzidentml.identification.objects.general.CombinedDatabaseReference;
 import nl.eriba.mzidentml.identification.objects.general.ProteinDatabaseSequence;
 import nl.eriba.mzidentml.identification.objects.mzid.MzIdProteinDetectionHypothesis;
+import nl.eriba.mzidentml.identification.objects.output.ProteinOutput;
 import nl.eriba.mzidentml.tools.CalculationTools;
 
 /**
  *
- * @author vnijenhuis
+ * @author Vikthor
  */
-public class ProteinEntryDatabaseMatcher implements Callable {
+public class ProteinEntryMatcher implements Callable {
     /**
      * 
      */
     private final ProteinOutputCollection proteinEntryCollection;
-    
-    /**
-     * 
-     */
-    private final HashMap<Character, ProteinDatabaseSequenceCollection> databaseSequenceCollectionMap;
     
     /**
      * 
@@ -54,9 +50,8 @@ public class ProteinEntryDatabaseMatcher implements Callable {
      * @param databaseReference
      * @param proteinEntryCollection 
      */
-    public ProteinEntryDatabaseMatcher(final CombinedDatabaseReference databaseReference, final HashMap<Character, ProteinDatabaseSequenceCollection> databaseSequenceCollectionMap, ProteinOutputCollection proteinEntryCollection, final HashMap<Character, MzIdProteinDetectionHypothesisCollection> proteinHypothesisCollectionMap) {
+    public ProteinEntryMatcher(final CombinedDatabaseReference databaseReference, ProteinOutputCollection proteinEntryCollection, final HashMap<Character, MzIdProteinDetectionHypothesisCollection> proteinHypothesisCollectionMap) {
         this.proteinEntryCollection = proteinEntryCollection;
-        this.databaseSequenceCollectionMap = databaseSequenceCollectionMap;
         this.databaseReference = databaseReference;
         this.proteinHypothesisCollectionMap = proteinHypothesisCollectionMap;
     }
@@ -71,45 +66,39 @@ public class ProteinEntryDatabaseMatcher implements Callable {
         ArrayList<Object> collection = new ArrayList<>();
         CalculationTools tools = new CalculationTools();
         char charAt = databaseReference.getProteinAccession().charAt(0);
-        if (databaseSequenceCollectionMap.keySet().contains(charAt) && proteinHypothesisCollectionMap.keySet().contains(charAt)) {
-            ProteinDatabaseSequenceCollection proteinDatabaseCollection = databaseSequenceCollectionMap.get(charAt);
+        if (proteinHypothesisCollectionMap.keySet().contains(charAt)) {
             MzIdProteinDetectionHypothesisCollection proteinHypothesisCollection = proteinHypothesisCollectionMap.get(charAt);
             if (!proteinHypothesisCollectionMap.isEmpty()) {
                 outerLoop: for (MzIdProteinDetectionHypothesis proteinHypothesis: proteinHypothesisCollection.getProteinDetectionHypothesisList()) {
                     if (databaseReference.getProteinAccession().equals(proteinHypothesis.getProteinAccession())) {
-                        for (ProteinDatabaseSequence databaseSequence: proteinDatabaseCollection.getProteinCollection()) {
-                            String reversedDatabaseProteinAccession = databaseSequence.getProteinAccession() + "_REVERSED";
-                            //Stop as soon as first index does not match anymore. Collection is sorted, so first index matching allows for bypassing lots of unncessary matches.
-                            if (databaseSequence.getProteinAccession().equals(proteinHypothesis.getProteinAccession()) || reversedDatabaseProteinAccession.equals(proteinHypothesis.getProteinAccession())) {
-                                Integer proteinLength = databaseSequence.getProteinSequence().length();
-                                Double proteinCoverage = tools.calculateProteinCoverage(databaseReference.getStartIndexList(), databaseReference.getEndIndexList(), proteinLength);
-                                Double averageMass = databaseSequence.getAverageMass();
-                                tools.roundDouble(averageMass, 2);
-                                String proteinAccession = databaseReference.getProteinAccession();
-                                String description = databaseReference.getProteinDescription();
-                                Integer peptideCount = databaseReference.getTotalPeptideCount();
-                                Integer uniquePeptideCount = databaseReference.getUniquePeptideCount();
-                                String score = proteinHypothesis.getCvParamList().get(0).getValue();
-                                Double proteinScore = Double.parseDouble(score);
-                                Integer proteinGroup = proteinHypothesis.getProteinGroup();
-                                String proteinId = proteinHypothesis.getProteinId();
-                                String postTranslationalModification = "";
-                                for (String modification: databaseReference.getPostTranslationalModifications()) {
-                                    if (postTranslationalModification.isEmpty()) {
-                                        postTranslationalModification += modification;
-                                    } else { 
-                                        postTranslationalModification += ":" + modification;
-                                    }
-                                }
-                                ProteinOutput proteinEntry = new ProteinOutput(proteinGroup, proteinId, proteinAccession, proteinScore, proteinCoverage, peptideCount, uniquePeptideCount, postTranslationalModification, averageMass, description);
-                                proteinEntryCollection.addProteinEntry(proteinEntry);
-                                // collection.add(protein);
-                                if (databaseReference.getProteinAccession().contains("ADIDVSGPK")) {
-                                    System.out.println(proteinEntry.toString());
-                                }
-                                break outerLoop;
+                        Integer proteinLength = Collections.max(databaseReference.getEvidenceIdList());
+                        Double proteinCoverage = tools.calculateProteinCoverage(databaseReference.getStartIndexList(), databaseReference.getEndIndexList(), proteinLength);
+                        //Average protein mass is not available in the mzid file. Requires a database of protein sequences to acquire information.
+                        Double averageMass = 0.0;
+                        tools.roundDouble(averageMass, 2);
+                        String proteinAccession = databaseReference.getProteinAccession();
+                        String description = databaseReference.getProteinDescription();
+                        Integer peptideCount = databaseReference.getTotalPeptideCount();
+                        Integer uniquePeptideCount = databaseReference.getUniquePeptideCount();
+                        String score = proteinHypothesis.getCvParamList().get(0).getValue();
+                        Double proteinScore = Double.parseDouble(score);
+                        Integer proteinGroup = proteinHypothesis.getProteinGroup();
+                        String proteinId = proteinHypothesis.getProteinId();
+                        String postTranslationalModification = "";
+                        for (String modification: databaseReference.getPostTranslationalModifications()) {
+                            if (postTranslationalModification.isEmpty()) {
+                                postTranslationalModification += modification;
+                            } else { 
+                                postTranslationalModification += ":" + modification;
                             }
                         }
+                        ProteinOutput proteinEntry = new ProteinOutput(proteinGroup, proteinId, proteinAccession, proteinScore, proteinCoverage, peptideCount, uniquePeptideCount, postTranslationalModification, averageMass, description);
+                        proteinEntryCollection.addProteinEntry(proteinEntry);
+                        // collection.add(protein);
+                        if (databaseReference.getProteinAccession().contains("ADIDVSGPK")) {
+                            System.out.println(proteinEntry.toString());
+                        }
+                        break outerLoop;
                     }
                 }
             }
@@ -120,8 +109,6 @@ public class ProteinEntryDatabaseMatcher implements Callable {
 
     /**
      * 
-     * @param proteinDatabase
-     * @param proteinEntryCollection
      * @param proteinHypothesisCollection
      * @param combinedDatabaseReferenceCollection
      * @param threads
@@ -129,7 +116,7 @@ public class ProteinEntryDatabaseMatcher implements Callable {
      * @throws InterruptedException
      * @throws ExecutionException 
      */
-    public final ProteinOutputCollection createProteinEntryCollection(ProteinDatabaseSequenceCollection proteinDatabase, MzIdProteinDetectionHypothesisCollection proteinHypothesisCollection, final CombinedDatabaseReferenceCollection combinedDatabaseReferenceCollection, final Integer threads) throws InterruptedException, ExecutionException, IOException {
+    public final ProteinOutputCollection createProteinEntryCollection(MzIdProteinDetectionHypothesisCollection proteinHypothesisCollection, final CombinedDatabaseReferenceCollection combinedDatabaseReferenceCollection, final Integer threads) throws InterruptedException, ExecutionException, IOException {
         MzIdProteinDetectionHypothesisCollection filteredCollection = new MzIdProteinDetectionHypothesisCollection();
         MzIdProteinDetectionHypothesisCollection reversedCollection = new MzIdProteinDetectionHypothesisCollection();
         CombinedDatabaseReferenceCollection reversedReferenceCollection = new CombinedDatabaseReferenceCollection();
@@ -150,35 +137,33 @@ public class ProteinEntryDatabaseMatcher implements Callable {
                 filteredReferenceCollection.addDatabaseReference(reference);
             }
         }
-                ProteinOutputCollection finalProteinOutputCollection = new ProteinOutputCollection();
-        finalProteinOutputCollection = matchReferencesToDatabase(proteinDatabase, finalProteinOutputCollection, reversedCollection, reversedReferenceCollection, threads);
-        finalProteinOutputCollection = matchReferencesToDatabase(proteinDatabase, finalProteinOutputCollection, filteredCollection, filteredReferenceCollection, threads);
+        ProteinOutputCollection finalProteinOutputCollection = new ProteinOutputCollection();
+        finalProteinOutputCollection = matchReferencesToDatabase(finalProteinOutputCollection, reversedCollection, reversedReferenceCollection, threads);
+        finalProteinOutputCollection = matchReferencesToDatabase(finalProteinOutputCollection, filteredCollection, filteredReferenceCollection, threads);
         return finalProteinOutputCollection;
     }
 
     /**
-     * Match collections to the protein database.
-     * @param proteinDatabase
-     * @param proteinEntryCollection
-     * @param proteinHypothesisCollection
-     * @param combinedDatabaseReferenceCollection
-     * @param threads
-     * @return
+     * Matches the ProteinHypothesisCollection and CombinedDatabaseReferenceCollection to acquire protein data without database matching.
+     *
+     * @param proteinEntryCollection collection of ProteinEntry objects.
+     * @param proteinHypothesisCollection collection of ProteinHypothesis objects.
+     * @param combinedDatabaseReferenceCollection collection of CombinedDatabaseReference objects.
+     * @param threads amount of threads used for multithreading purpose.
+     * @return updated collection of ProteinEntry objects.
      * @throws InterruptedException
      * @throws ExecutionException 
      */
-    public final ProteinOutputCollection matchReferencesToDatabase(ProteinDatabaseSequenceCollection proteinDatabase, ProteinOutputCollection proteinEntryCollection, MzIdProteinDetectionHypothesisCollection proteinHypothesisCollection,
+    public final ProteinOutputCollection matchReferencesToDatabase(ProteinOutputCollection proteinEntryCollection, MzIdProteinDetectionHypothesisCollection proteinHypothesisCollection,
             CombinedDatabaseReferenceCollection combinedDatabaseReferenceCollection, final Integer threads) throws InterruptedException, ExecutionException, IOException {
         proteinHypothesisCollection.sortOnProteinAccession();
         combinedDatabaseReferenceCollection.sortOnAccession();
-        proteinDatabase.sortOnProteinAccession();
         ExecutorService executor = Executors.newFixedThreadPool(threads);
         HashMap<Character, MzIdProteinDetectionHypothesisCollection> proteinHypothesisMap = createProteinHypothesisMap(proteinHypothesisCollection);
-        HashMap<Character, ProteinDatabaseSequenceCollection> databaseSequenceMap = createDatabaseSequenceMap(proteinDatabase);
         int count = 0;
         for (CombinedDatabaseReference combinedDatabaseReference: combinedDatabaseReferenceCollection.getDatabaseReferenceList()) {
             count++;
-            Callable<ArrayList<Object> > callable = new ProteinEntryDatabaseMatcher(combinedDatabaseReference, databaseSequenceMap, proteinEntryCollection, proteinHypothesisMap);
+            Callable<ArrayList<Object> > callable = new ProteinEntryMatcher(combinedDatabaseReference, proteinEntryCollection, proteinHypothesisMap);
             Future<ArrayList<Object>> future = executor.submit(callable);
             if (!future.get().isEmpty()) {
                 proteinEntryCollection = (ProteinOutputCollection) future.get().get(0);
@@ -216,32 +201,5 @@ public class ProteinEntryDatabaseMatcher implements Callable {
             }
         }
         return proteinHypothesisMap;
-    }
-
-    /**
-     * 
-     * @param proteinDatabase
-     * @return 
-     */
-    private HashMap<Character, ProteinDatabaseSequenceCollection> createDatabaseSequenceMap(ProteinDatabaseSequenceCollection proteinDatabase) {
-        HashMap<Character, ProteinDatabaseSequenceCollection> databaseSequenceMap = new HashMap<>();
-        for (ProteinDatabaseSequence databaseSequence: proteinDatabase.getProteinCollection()) {
-            Boolean newEntry = true;
-            if (!databaseSequenceMap.isEmpty()) {
-                for (Map.Entry<Character, ProteinDatabaseSequenceCollection> y: databaseSequenceMap.entrySet()) {
-                    if (y.getKey() == databaseSequence.getProteinAccession().charAt(0)) {
-                        y.getValue().addProtein(databaseSequence);
-                        newEntry = false;
-                        break;
-                    }
-                }
-            }
-            if (newEntry) {
-                ProteinDatabaseSequenceCollection newDatabaseCollection = new ProteinDatabaseSequenceCollection();
-                newDatabaseCollection.addProtein(databaseSequence);
-                databaseSequenceMap.put(databaseSequence.getProteinAccession().charAt(0), newDatabaseCollection);
-            }
-        }
-        return databaseSequenceMap;
     }
 }
