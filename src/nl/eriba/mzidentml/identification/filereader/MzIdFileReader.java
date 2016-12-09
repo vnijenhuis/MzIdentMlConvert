@@ -245,23 +245,19 @@ public class MzIdFileReader implements Callable {
                     Callable<ArrayList<Object>> callable = new MzIdFileReader(spectrumIdResult, spectrumIdentificationItem, peptides, mzidProteinPeptideCollection, scanIdEntryCollection, combinedPeptides,  spectraCountMap, generateBestSpectrumList, inputNumbers, currentIndex, totalIndex, intensityThreshold);
                     //Collects the output from the call function
                     Future<ArrayList<Object>> future = executor.submit(callable);
+                    scanIdEntryCollection = (ScanIdOutputCollection) future.get().get(0);
                     for (Integer number : numbers) {
                         //Add data to respective collection if number is present.
-                        if (null != number) {
+                        if (number != null) {
                             switch (number) {
                                 case 1:
-                                    //Create ScanIdEntry collection for database matching purposes.
-                                    //Displays peptide sequence and PEAKS scan id.
-                                    scanIdEntryCollection = (ScanIdOutputCollection) future.get().get(0);
-                                    break;
-                                case 2:
                                     //Gathers DatabaseSearchPsm objects to define peptide spectrum match data.
                                     DatabaseSearchPsmOutputCollection psmObjects = (DatabaseSearchPsmOutputCollection) future.get().get(1);
                                     for (DatabaseSearchPsmOutput object : psmObjects.getDatabaseSearchPsmEntryList()) {
                                         searchPsmEntryCollection.addDatabaseSearchPsmEntry(object);
                                     }
                                     break;
-                                case 3:
+                                case 2:
                                     //Gathers PeptideOutput objects to define peptide data.
                                     PeptideOutputCollection peptideObjects = (PeptideOutputCollection) future.get().get(2);
                                     for (PeptideOutput object : peptideObjects.getPeptideEntryList()) {
@@ -273,7 +269,7 @@ public class MzIdFileReader implements Callable {
                                         matchedIonSeriesCollection.addMatchedIonSeries(ionSeries);
                                     }
                                     break;
-                                case 4:
+                                case 3:
                                     //Gathers ProteinPeptideOutput objects to define protein-peptide data.
                                     ProteinPeptideOutputCollection proteinPeptideObjects = (ProteinPeptideOutputCollection) future.get().get(4);
                                     mzidProteinPeptideCollection = (MzIdProteinPeptideCollection) future.get().get(5);

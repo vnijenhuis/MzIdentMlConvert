@@ -192,9 +192,10 @@ public class PeptideMzIdentMLIdentification {
             //Allocate command line input to variables.
             String inputFile = cmd.getOptionValue("mzid");
             String databaseTextFile = "";
-            Boolean matchToDatabases = true;
+            Boolean matchToDatabases = false;
             if (cmd.hasOption("databases")) {
                 databaseTextFile = cmd.getOptionValue("databases");
+                matchToDatabases = true;
             }
             EntryFileReader reader = new EntryFileReader();
             String outputDirectory = cmd.getOptionValue("output");
@@ -218,9 +219,8 @@ public class PeptideMzIdentMLIdentification {
             //Read input file
             if (inputTools.isTxtFile(inputFile) && matchToDatabases) {
                 //Run with databases
-                LinkedHashMap<String, ArrayList<String>> databaseEntryMap = new LinkedHashMap<>();
                 ArrayList<String> databaseList = reader.readMainTextFile(databaseTextFile);
-                databaseEntryMap = reader.createDatabaseHashMap(databaseList, separator);
+                LinkedHashMap<String, ArrayList<String>> databaseEntryMap = reader.createDatabaseHashMap(databaseList, separator);
                 String[] folders = inputFile.split(separator);
                 String method = folders[folders.length - 2];
                 ArrayList<String> entryFileList = reader.readMainTextFile(inputFile);
@@ -259,7 +259,7 @@ public class PeptideMzIdentMLIdentification {
             throws IOException, InterruptedException, ExecutionException, SAXException, ParserConfigurationException {
         System.out.println("Starting identification of PeptideShaker mzid data...");
         long startTime = System.currentTimeMillis() / 1000;
-        HashMap<String, HashMap<Integer, ProteinDatabaseSequenceCollection>> proteinSequenceDatabaseMap = null;
+        HashMap<String, HashMap<Integer, ProteinDatabaseSequenceCollection>> proteinSequenceDatabaseMap = new HashMap<>();
         if (matchToDatabases) {
             ProteinSequenceDatabaseMap databaseMap = new ProteinSequenceDatabaseMap();
             proteinSequenceDatabaseMap = databaseMap.createProteinSequenceDatabaseMap(databaseEntryMap);
@@ -275,12 +275,11 @@ public class PeptideMzIdentMLIdentification {
                 sampleSize = entry.getValue().size();
             }
         }
-        sampleSize = 6;
-        for (Integer currentSampleIndex = 5; currentSampleIndex < sampleSize; currentSampleIndex++) {
+        sampleSize = 1;
+        for (Integer currentSampleIndex = 0; currentSampleIndex < sampleSize; currentSampleIndex++) {
             ScanIdOutputCollection scanIdOutputCollection = new ScanIdOutputCollection();
             for (int currentIndex = 0; currentIndex < rnaSeqDatabaseKeys.size(); currentIndex++) {
                 String database = rnaSeqDatabaseKeys.get(currentIndex);
-                ProteinOutputCollection proteinOutputCollection = new ProteinOutputCollection();
                 ArrayList<String> list = mzidEntryMap.get(rnaSeqDatabaseKeys.get(currentIndex));
                 String file = list.get(currentSampleIndex);
                 //Get correct file.
@@ -289,28 +288,32 @@ public class PeptideMzIdentMLIdentification {
                 mzidFormatFileReader = new MzIdFileReader(null, null, null, null, scanIdOutputCollection, null, null, null, inputFileFlags, currentIndex, maximumIndex, intensityThreshold);
                 ArrayList<Object> collections = mzidFormatFileReader.collectPeptideShakerScanIDs(file, scanIdOutputCollection, inputFileFlags, currentIndex, maximumIndex, threads, intensityThreshold);
                 //Get data from returned collection and write data to corresponding files.
-                System.out.println("Processin data from sample " + currentSampleIndex + " " + database);
+                System.out.println("Processin data from sample " + file + " " + database);
                 int index = 0;
+                if (matchToDatabases) {
+                    ScanIdOutputCollection collection = (ScanIdOutputCollection) collections.get(index);
+                    scanIdOutputCollection.getScanIdEntryList().addAll(collection.getScanIdEntryList());
+                }
+                index++;
                 for (Integer num : inputFileFlags) {
                     switch (num) {
                         case 1:
-                            ScanIdOutputCollection collection = (ScanIdOutputCollection) collections.get(index);
-                            scanIdOutputCollection.getScanIdEntryList().addAll(collection.getScanIdEntryList());
-                            break;
-                        case 2:
                             DatabaseSearchPsmOutputCollection psmCollection = (DatabaseSearchPsmOutputCollection) collections.get(index);
                             createDatabaseSearchOutput(psmCollection, sampleOutputDirectory);
                             break;
-                        case 3:
+                        case 2:
                             PeptideOutputCollection peptideCollection = (PeptideOutputCollection) collections.get(index);
-                            createPeptideOutput(peptideCollection, (MatchedIonSeriesCollection) collections.get(index), sampleOutputDirectory);
+                            index++;
+                            MatchedIonSeriesCollection ionSeriesCollection = (MatchedIonSeriesCollection) collections.get(index);
+                            createPeptideOutput(peptideCollection, ionSeriesCollection, sampleOutputDirectory);
                             break;
-                        case 4:
+                        case 3:
                             ProteinPeptideOutputCollection proteinPeptideCollection = (ProteinPeptideOutputCollection) collections.get(index);
                             createProteinPeptideOutput(proteinPeptideCollection, sampleOutputDirectory);
                             break;
-                        case 5:
+                        case 4:
                             MzIdProteinDetectionHypothesisCollection proteinHypothesisCollection = (MzIdProteinDetectionHypothesisCollection) collections.get(index);
+                            index++;
                             CombinedDatabaseReferenceCollection combinedReferenceCollection = (CombinedDatabaseReferenceCollection) collections.get(index);
                             ProteinDatabaseSequenceCollection proteinDatabase = getProteinDatabase(currentSampleIndex, currentIndex, proteinSequenceDatabaseMap, rnaSeqDatabaseKeys);
                             createProteinOutputWithDatabase(proteinHypothesisCollection, combinedReferenceCollection, proteinDatabase, sampleOutputDirectory, threads);
@@ -321,7 +324,7 @@ public class PeptideMzIdentMLIdentification {
                     index++;
                 }
             }
-            if (inputFileFlags.contains(1)) {
+            if (matchToDatabases) {
                 //Set ScanID flag depending on sequence status.
                 ScanIdCollectionFlagger flagger = new ScanIdCollectionFlagger();
                 ScanIdOutputCollection finalScanCollection = flagger.setFlags(scanIdOutputCollection, maximumIndex);
@@ -351,9 +354,9 @@ public class PeptideMzIdentMLIdentification {
                 directory = outputDirectory + method + "_mzid_flagged_scanIDs.csv";
                 mzidScanIdCsvWriter.writeCsv(directory, scanIdEntryCollectionList.get(1), rnaSeqDatabaseKeys);
             }
-            long endTime = System.currentTimeMillis() / 1000;
-            System.out.println("Process took " + (endTime - startTime) + " seconds.");
         }
+        long endTime = System.currentTimeMillis() / 1000;
+        System.out.println("Process took " + (endTime - startTime) + " seconds.");
     }
 
     /**
@@ -374,8 +377,10 @@ public class PeptideMzIdentMLIdentification {
             final ArrayList<Integer> inputFileFlags, final Integer threads) throws IOException, InterruptedException, ExecutionException, SAXException, ParserConfigurationException {
         System.out.println("Starting identification of PeptideShaker mzid data...");
         long startTime = System.currentTimeMillis() / 1000;
-        HashMap<String, HashMap<Integer, ProteinDatabaseSequenceCollection>> proteinSequenceDatabaseMap = null;
         ArrayList<String> rnaSeqDatabaseKeys = new ArrayList<>();
+        for (String rnaSeq : mzidEntryMap.keySet()) {
+            rnaSeqDatabaseKeys.add(rnaSeq);
+        }
         Integer maximumIndex = mzidEntryMap.keySet().size() - 1;
         Integer sampleSize = 0;
         for (Map.Entry<String, ArrayList<String>> entry : mzidEntryMap.entrySet()) {
@@ -383,8 +388,7 @@ public class PeptideMzIdentMLIdentification {
                 sampleSize = entry.getValue().size();
             }
         }
-        sampleSize = 6;
-        for (Integer currentSampleIndex = 5; currentSampleIndex < sampleSize; currentSampleIndex++) {
+        for (Integer currentSampleIndex = 0; currentSampleIndex < sampleSize; currentSampleIndex++) {
             ScanIdOutputCollection scanIdOutputCollection = new ScanIdOutputCollection();
             for (int currentIndex = 0; currentIndex < rnaSeqDatabaseKeys.size(); currentIndex++) {
                 String database = rnaSeqDatabaseKeys.get(currentIndex);
@@ -394,65 +398,34 @@ public class PeptideMzIdentMLIdentification {
                 mzidFormatFileReader = new MzIdFileReader(null, null, null, null, scanIdOutputCollection, null, null, null, inputFileFlags, currentIndex, maximumIndex, intensityThreshold);
                 ArrayList<Object> collections = mzidFormatFileReader.collectPeptideShakerScanIDs(file, scanIdOutputCollection, inputFileFlags, currentIndex, maximumIndex, threads, intensityThreshold);
                 System.out.println("Processin data from sample " + currentSampleIndex + " " + database);
-                int index = 0;
+                //Start index at one because first index (index 0) contains scan id collection.
+                int index = 1;
                 for (Integer num : inputFileFlags) {
                     switch (num) {
                         case 1:
-                            ScanIdOutputCollection collection = (ScanIdOutputCollection) collections.get(index);
-                            scanIdOutputCollection.getScanIdEntryList().addAll(collection.getScanIdEntryList());
-                            break;
-                        case 2:
                             DatabaseSearchPsmOutputCollection psmCollection = (DatabaseSearchPsmOutputCollection) collections.get(index);
                             createDatabaseSearchOutput(psmCollection, sampleOutputDirectory);
                             break;
-                        case 3:
+                        case 2:
                             PeptideOutputCollection peptideCollection = (PeptideOutputCollection) collections.get(index);
+                            index++;
                             createPeptideOutput(peptideCollection, (MatchedIonSeriesCollection) collections.get(index), sampleOutputDirectory);
                             break;
-                        case 4:
+                        case 3:
                             ProteinPeptideOutputCollection proteinPeptideCollection = (ProteinPeptideOutputCollection) collections.get(index);
                             createProteinPeptideOutput(proteinPeptideCollection, sampleOutputDirectory);
                             break;
-                        case 5:
+                        case 4:
                             MzIdProteinDetectionHypothesisCollection proteinHypothesisCollection = (MzIdProteinDetectionHypothesisCollection) collections.get(index);
+                            index++;
                             CombinedDatabaseReferenceCollection combinedReferenceCollection = (CombinedDatabaseReferenceCollection) collections.get(index);
                             createProteinOutputNoDatabase(proteinHypothesisCollection, combinedReferenceCollection, sampleOutputDirectory, threads);
                             break;
                         default:
                             break;
                     }
+                    index++;
                 }
-                index++;
-            }
-            if (inputFileFlags.contains(1)) {
-                //Set ScanID flag depending on sequence status.
-                ScanIdCollectionFlagger flagger = new ScanIdCollectionFlagger();
-                ScanIdOutputCollection finalScanCollection = flagger.setFlags(scanIdOutputCollection, maximumIndex);
-                //Separate ScanID objects depending on the given flag.
-                ScanIdCollectionSeparator scanIdEntrySeparator = new ScanIdCollectionSeparator();
-                ArrayList<ScanIdOutputCollection> scanIdEntryCollectionList = scanIdEntrySeparator.separateScanEntries(finalScanCollection);
-                //Use database matching on the flagged ScanIds.
-                ScanIdOutputCollection flaggedCollection = scanIdEntryCollectionList.get(1);
-                int entryCount = 0;
-                for (Map.Entry<String, HashMap<Integer, ProteinDatabaseSequenceCollection>> mapEntry : proteinSequenceDatabaseMap.entrySet()) {
-                    if (!flaggedCollection.getScanIdEntryList().isEmpty()) {
-                        for (Map.Entry<Integer, ProteinDatabaseSequenceCollection> proteinEntry : mapEntry.getValue().entrySet()) {
-                            //Match key to the current index of the size. -1 for single database files.
-                            if (Objects.equals(proteinEntry.getKey(), currentSampleIndex) || proteinEntry.getKey() == -1) {
-                                ScanIdDatabaseMatcher matcher = new ScanIdDatabaseMatcher(null, null, rnaSeqDatabaseKeys.get(entryCount), proteinEntry.getValue());
-                                flaggedCollection = matcher.matchSequencesToDatabase(flaggedCollection, rnaSeqDatabaseKeys.get(entryCount), proteinEntry.getValue(), threads);
-                                scanIdEntryCollectionList.set(1, flaggedCollection);
-                            }
-                        }
-                    } else {
-                        System.out.println("WARNING: No scan IDs available in the flagged scan ID collection.");
-                    }
-                    entryCount++;
-                }
-                String directory = outputDirectory + method + "_mzid_non_flagged_scanIDs.csv";
-                mzidScanIdCsvWriter.writeCsv(directory, scanIdEntryCollectionList.get(0), rnaSeqDatabaseKeys);
-                directory = outputDirectory + method + "_mzid_flagged_scanIDs.csv";
-                mzidScanIdCsvWriter.writeCsv(directory, scanIdEntryCollectionList.get(1), rnaSeqDatabaseKeys);
             }
             long endTime = System.currentTimeMillis() / 1000;
             System.out.println("Process took " + (endTime - startTime) + " seconds.");

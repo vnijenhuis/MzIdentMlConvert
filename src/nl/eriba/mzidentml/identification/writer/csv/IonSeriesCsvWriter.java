@@ -26,11 +26,11 @@ public class IonSeriesCsvWriter {
      */
     public final void writeCsv(String outputDirectory, final MatchedIonSeriesCollection matchedIonSeries) throws IOException {
         String outputFile = outputDirectory + "ion-series.csv";
-        InputTools test = new InputTools();
+        InputTools input = new InputTools();
         FileWriter writer;
-        if (test.isFile(outputFile)) {
+        if (input.isFile(outputFile)) {
             writer = new FileWriter(outputFile, true);
-            System.out.println("Writing data to existing file: " + outputFile);
+            System.out.println("WARNING! Writing data to existing file: " + outputFile);
         } else {
             writer = new FileWriter(outputFile);
             System.out.println("Writing output to " + outputFile);
